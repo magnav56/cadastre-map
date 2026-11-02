@@ -92,11 +92,13 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
 - The layers button above it switches between the plan and satellite maps. The app remembers your choice.
 - Tap a lot to highlight it and show its number. Lots starting with `PC-` are complementary plans.
 - Pinch to zoom, and rotate with two fingers. Tap the compass to point north again.
+- The arrow on your location dot shows where the phone is pointing. On iPhone, tap the map once and allow **Motion & Orientation Access** to turn it on. If the arrow looks wrong, move the phone in a figure 8 to recalibrate its compass.
 
 ## Limitations
 
 - **Not a legal boundary.** The government data is indicative. Only a land surveyor's boundary determination establishes the true limit of a lot. Lots can also be visibly offset from the base map.
 - **Renovated cadastre only.** The source layer covers the "cadastre rénové". Areas not yet renovated may show no lots. For official records, use [Infolot](https://www.quebec.ca/habitation-territoire/information-fonciere/cadastre/consulter-cadastre).
+- **Location accuracy is limited by the phone.** The app smooths your location, but a browser can't reach better than the phone's own fix, typically a few metres outdoors and worse under trees or near buildings. Don't use it to place a boundary.
 - **Internet required.** There is no offline mode.
 - **Third-party services.** The app depends on the free services below, and none of them guarantees uptime. If the cadastre service is down, the app says so and the base map keeps working.
 

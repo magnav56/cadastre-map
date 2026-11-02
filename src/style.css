@@ -24,6 +24,27 @@ body {
   text-align: center;
 }
 
+.heading-arrow {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  width: 20px;
+  height: 14px;
+  margin-left: -10px;
+  filter: drop-shadow(0 0 2px rgb(0 0 0 / 35%));
+}
+
+.heading-arrow path {
+  fill: #1da1f2;
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.maplibregl-user-location-dot-stale .heading-arrow {
+  display: none;
+}
+
 /* Keep the location button clear of the iPhone home indicator. */
 .maplibregl-ctrl-bottom-right {
   bottom: env(safe-area-inset-bottom);

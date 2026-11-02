@@ -1,7 +1,10 @@
 import * as maplibregl from 'maplibre-gl';
 import type { ErrorEvent, GeoJSONSource, MapMouseEvent } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
+import { magvar } from 'magvar';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { watchCompass } from './compass';
+import { LocationFilter } from './location-filter';
 import './style.css';
 
 const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
@@ -34,6 +37,37 @@ const geolocate = new maplibregl.GeolocateControl({
   positionOptions: { enableHighAccuracy: true },
   trackUserLocation: true,
   fitBoundsOptions: { maxZoom: 17 },
+});
+
+// The control has no hook for changing a fix, so wrap the handler it passes to watchPosition. That
+// way the dot, the accuracy circle and the camera all use the filtered position.
+const locationFilter = new LocationFilter();
+const showFix = geolocate._onSuccess;
+geolocate._onSuccess = (fix) => showFix(locationFilter.update(fix));
+
+const headingArrow = document.createElement('div');
+headingArrow.className = 'heading-arrow';
+headingArrow.innerHTML = `
+  <svg viewBox="0 0 20 14" width="20" height="14" aria-hidden="true">
+    <path d="M10 2 18 12 10 9.5 2 12Z" />
+  </svg>`;
+let magneticHeading: number | null = null;
+let declination: number | null = null;
+
+// Rotating the dot itself keeps the arrow right as the map turns and tilts.
+function updateHeadingArrow() {
+  if (magneticHeading === null || declination === null) return;
+  const dot = geolocate._userLocationDotMarker;
+  if (!headingArrow.isConnected) {
+    dot.getElement().append(headingArrow);
+    dot.setRotationAlignment('map');
+  }
+  dot.setRotation(magneticHeading + declination);
+}
+
+watchCompass((heading) => {
+  magneticHeading = heading;
+  updateHeadingArrow();
 });
 
 map.addControl(new maplibregl.NavigationControl({ showZoom: false }), 'top-right');
@@ -153,9 +187,12 @@ map.on('data', (e) => {
   }
 });
 
-geolocate.on('geolocate', () => {
+geolocate.on('geolocate', ({ coords }) => {
   locationError = null;
   updateStatus();
+  // Phones report magnetic north, which is about 15° from the map's north in Québec.
+  declination = magvar(coords.latitude, coords.longitude);
+  updateHeadingArrow();
 });
 
 geolocate.on('error', (e) => {

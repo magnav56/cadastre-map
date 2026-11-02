@@ -15,6 +15,8 @@ See Québec's cadastral lots and your own location on a Google Maps-style map, o
 | Cadastre drawing | Server-drawn image tiles, tile size 512, at double DPI | Lot numbers come already drawn and sharp. A viewport at low zoom can exceed the service's 2,000-lot limit per request, which rules out drawing every polygon in the browser. |
 | Lot selection | Point query on tap | Fetches only the tapped lot's outline for highlighting. |
 | Hosting | GitHub Pages | Free HTTPS, which iOS requires for location. |
+| Location smoothing | Small Kalman filter in `src/location-filter.ts` | The phone has already fused its GPS, Wi-Fi and cell data, so the filter only removes jitter and wild jumps. It's about 150 lines, because a general library would still need all the fix handling written around it. |
+| Direction arrow | Device compass, corrected to true north with `magvar` | Phones report magnetic north, about 15° from the map's north in Québec. |
 
 ## Phase 1: Working app (done)
 
@@ -35,6 +37,7 @@ See Québec's cadastral lots and your own location on a Google Maps-style map, o
 - [ ] Check the iPhone layout around the notch and home indicator
 - [ ] Install on an Android phone from the hosted HTTPS URL, if you have one
 - [ ] Walk a known property and judge how well lots line up with the map
+- [ ] Check the direction arrow against a known line, such as a street, on iPhone and Android, flat, upright and in landscape
 - [ ] Open the app somewhere outside the tested cities and check rural coverage
 
 Fix whatever this turns up before adding anything else.
