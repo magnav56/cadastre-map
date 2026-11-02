@@ -5,6 +5,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import './style.css';
 
 const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const SATELLITE_TILES =
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const CADASTRE_URL =
   'https://geo.environnement.gouv.qc.ca/donnees/rest/services/Reference/Cadastre_allege/MapServer';
 
@@ -37,6 +39,50 @@ const geolocate = new maplibregl.GeolocateControl({
 map.addControl(new maplibregl.NavigationControl({ showZoom: false }), 'top-right');
 map.addControl(geolocate, 'bottom-right');
 
+let satellite = localStorage.getItem('basemap') === 'satellite';
+const layersButton = document.createElement('button');
+
+function applyBasemap() {
+  const label = satellite ? 'Show plan map' : 'Show satellite map';
+  layersButton.title = label;
+  layersButton.setAttribute('aria-label', label);
+  layersButton.setAttribute('aria-pressed', String(satellite));
+  if (!map.getLayer('satellite')) return;
+
+  map.setLayoutProperty('satellite', 'visibility', satellite ? 'visible' : 'none');
+  // The service draws black lines and numbers with a white halo, which is hard to read on
+  // imagery. Swapping these two inverts it to white on a dark halo.
+  map.setPaintProperty('cadastre', 'raster-brightness-min', satellite ? 1 : 0);
+  map.setPaintProperty('cadastre', 'raster-brightness-max', satellite ? 0 : 1);
+}
+
+layersButton.type = 'button';
+layersButton.className = 'layers-button';
+layersButton.innerHTML = `
+  <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+    <path d="M12 3 2 9l10 6 10-6-10-6Z" />
+    <path d="m4.5 13.5-2.5 1.5 10 6 10-6-2.5-1.5-7.5 4.5-7.5-4.5Z" />
+  </svg>`;
+layersButton.addEventListener('click', () => {
+  satellite = !satellite;
+  localStorage.setItem('basemap', satellite ? 'satellite' : 'plan');
+  applyBasemap();
+});
+
+map.addControl(
+  {
+    onAdd() {
+      const container = document.createElement('div');
+      container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+      container.append(layersButton);
+      return container;
+    },
+    onRemove() {},
+  },
+  'bottom-right',
+);
+applyBasemap();
+
 function updateStatus() {
   const zoomHint = map.getZoom() < CADASTRE_MIN_ZOOM - 0.5 ? 'Zoom in to see lots' : null;
   const message = locationError ?? cadastreError ?? zoomHint;
@@ -49,6 +95,20 @@ map.on('load', () => {
   const tiles =
     `${CADASTRE_URL}/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857` +
     `&size=${TILE_SIZE * 2},${TILE_SIZE * 2}&dpi=192&format=png32&transparent=true&f=image`;
+
+  map.addSource('satellite', {
+    type: 'raster',
+    tiles: [SATELLITE_TILES],
+    tileSize: 256,
+    maxzoom: 19,
+    attribution: 'Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community',
+  });
+  map.addLayer({
+    id: 'satellite',
+    type: 'raster',
+    source: 'satellite',
+    layout: { visibility: 'none' },
+  });
 
   map.addSource('cadastre', {
     type: 'raster',
@@ -73,6 +133,7 @@ map.on('load', () => {
     paint: { 'line-color': '#1a73e8', 'line-width': 3 },
   });
 
+  applyBasemap();
   updateStatus();
   geolocate.trigger();
 });

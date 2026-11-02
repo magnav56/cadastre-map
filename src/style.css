@@ -34,6 +34,16 @@ body {
   height: 44px;
 }
 
+.layers-button {
+  display: grid;
+  place-items: center;
+  fill: #333;
+}
+
+.layers-button[aria-pressed='true'] {
+  fill: #1a73e8;
+}
+
 .maplibregl-popup-content {
   font-size: 15px;
   font-weight: 600;

@@ -89,6 +89,7 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
 ## Using it
 
 - The map centres on you when it opens. The button at the bottom right recentres it and follows you as you move.
+- The layers button above it switches between the plan and satellite maps. The app remembers your choice.
 - Tap a lot to highlight it and show its number. Lots starting with `PC-` are complementary plans.
 - Pinch to zoom, and rotate with two fingers. Tap the compass to point north again.
 
@@ -97,7 +98,7 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
 - **Not a legal boundary.** The government data is indicative. Only a land surveyor's boundary determination establishes the true limit of a lot. Lots can also be visibly offset from the base map.
 - **Renovated cadastre only.** The source layer covers the "cadastre rénové". Areas not yet renovated may show no lots. For official records, use [Infolot](https://www.quebec.ca/habitation-territoire/information-fonciere/cadastre/consulter-cadastre).
 - **Internet required.** There is no offline mode.
-- **Third-party services.** The app depends on the two free services below, and neither one guarantees uptime. If the cadastre service is down, the app says so and the base map keeps working.
+- **Third-party services.** The app depends on the free services below, and none of them guarantees uptime. If the cadastre service is down, the app says so and the base map keeps working.
 
 ## Data and technology
 
@@ -105,6 +106,7 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
 | --- | --- |
 | Map engine | [MapLibre GL JS](https://maplibre.org/) |
 | Base map | [OpenFreeMap](https://openfreemap.org/) "Liberty" style, using OpenStreetMap data |
+| Satellite | [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) |
 | Cadastre | [`Cadastre_allege`](https://geo.environnement.gouv.qc.ca/donnees/rest/services/Reference/Cadastre_allege/MapServer) service, © Gouvernement du Québec |
 | Build | Vite and TypeScript |
 | Hosting | GitHub Pages |
