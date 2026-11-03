@@ -59,10 +59,15 @@ body {
   height: 44px;
 }
 
-.layers-button {
+.layers-button,
+.save-button {
   display: grid;
   place-items: center;
   fill: #333;
+}
+
+.save-button:disabled {
+  fill: #aaa;
 }
 
 .layers-button[aria-pressed='true'] {
@@ -109,6 +114,10 @@ body {
   margin: 0 0 8px;
   color: #555;
   font-size: 13px;
+}
+
+.lot-details .offline-note {
+  color: #b06000;
 }
 
 .lot-details dl {

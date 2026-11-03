@@ -15,6 +15,8 @@ See Québec's cadastral lots and your own location on a Google Maps-style map, o
 | Cadastre drawing | Server-drawn image tiles, tile size 512, at double DPI | Lot numbers come already drawn and sharp. A viewport at low zoom can exceed the service's 2,000-lot limit per request, which rules out drawing every polygon in the browser. |
 | Lot selection | Point query on tap | Fetches only the tapped lot's outline for highlighting. |
 | Hosting | GitHub Pages | Free HTTPS, which iOS requires for location. |
+| Offline lots | Lot outlines saved in IndexedDB in blocks of zoom-15 tiles, drawn and tapped locally | The live cadastre is server-drawn images, which can't be tapped offline and are heavy to store. Saved outlines are light, work at any zoom, and give the area and perimeter. |
+| Offline map | Hand-written service worker using Workbox | OpenFreeMap puts a daily version in its tile addresses. The service worker drops it from the cache key, which a generated service worker can't do, so saved tiles are still found the next day. |
 | Location smoothing | Small Kalman filter in `src/location-filter.ts` | The phone has already fused its GPS, Wi-Fi and cell data, so the filter only removes jitter and wild jumps. It's about 150 lines, because a general library would still need all the fix handling written around it. |
 | Direction arrow | Device compass, corrected to true north with `magvar` | Phones report magnetic north, about 15° from the map's north in Québec. |
 
@@ -25,6 +27,7 @@ See Québec's cadastral lots and your own location on a Google Maps-style map, o
 - [x] Tap a lot to highlight it and show its number
 - [x] Layers button to switch between plan and satellite maps
 - [x] Lot card with area, perimeter, municipality, MRC, region and nearest address
+- [x] Offline use: the app opens offline, lots are saved automatically or by area, and saved lots can be tapped
 - [x] Messages for zooming in, location denied and service unavailable
 - [x] Home Screen metadata and icons
 - [x] GitHub Pages workflow
@@ -38,6 +41,7 @@ See Québec's cadastral lots and your own location on a Google Maps-style map, o
 - [ ] Check the iPhone layout around the notch and home indicator
 - [ ] Install on an Android phone from the hosted HTTPS URL, if you have one
 - [ ] Walk a known property and judge how well lots line up with the map
+- [ ] Save an area, turn on airplane mode, then reopen the installed app and tap lots, on iPhone and Android
 - [ ] Check the direction arrow against a known line, such as a street, on iPhone and Android, flat, upright and in landscape
 - [ ] Open the app somewhere outside the tested cities and check rural coverage
 
@@ -52,7 +56,7 @@ In order of likely value:
 3. **Hazard and zoning overlays.** Flood zones are available as a live government service that browsers can use. The CPTAQ agricultural zone has a WMS service that hasn't been tested yet.
 4. **Lot opacity slider.** Useful where lot numbers cover the map in dense areas.
 5. **Coverage message.** Say when an area has no renovated cadastre, instead of showing an empty map.
-6. **Offline use.** Save recently viewed tiles with a service worker. This is the largest item, because iOS limits browser storage.
+6. **Manage saved areas.** List saved areas, show their size, and delete them. Today they're only replaced after 30 days.
 
 ## Risks
 
@@ -61,6 +65,6 @@ In order of likely value:
 | The Environment ministry changes or restricts the service | Lots disappear | The URL is one constant in `src/main.ts`. The fallback is a small proxy on a free tier, or another government endpoint. |
 | The service has no published licence | Access could be limited later | Personal, low-volume use only. Don't promote the app publicly. |
 | OpenFreeMap is unavailable | No base map | Swap the style URL for another MapLibre-compatible style. |
-| TerrAPI or Nominatim becomes unavailable | The card shows "Unavailable" for that row; everything else keeps working | Nominatim allows about one request per second, which tapping lots by hand stays under. |
+| TerrAPI or Nominatim becomes unavailable | The card falls back to saved details or "Unavailable"; everything else keeps working | Nominatim allows about one request per second, which tapping lots by hand stays under. |
 | Esri restricts its free imagery | No satellite map; the plan map keeps working | The tile URL is one constant in `src/main.ts`. Keep use personal and low-volume. |
-| iOS clears data for Home Screen apps | The location prompt may reappear | Harmless: the app stores nothing that matters. |
+| The phone clears the app's storage when low on space | Saved lots and the offline map are lost | The app asks the browser to keep its storage. Safari doesn't clear Home Screen apps' storage on its 7-day timer, but can under storage pressure. Re-save the area before a trip. |

@@ -97,6 +97,19 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
   - the nearest street address known to OpenStreetMap. This may belong to a neighbouring lot.
 
   Tap **×** to close the card.
+
+## Using it offline
+
+The app opens and works without internet, using what's been saved on your phone:
+
+- **Lots near you are saved automatically.** While you're online and zoomed in to street level, the lots on screen are saved in the background.
+- **Save an area before a trip.** Before going somewhere without signal, zoom out until the area you need fills the screen and tap the **download** button above the layers button. It saves every lot in view and the plan map for that area. It works from about a town's width across; if you're zoomed out too far, it asks you to zoom in.
+- **Offline**, the app says "Offline. Showing saved lots." It draws the saved lots, and tapping one shows its number, area and perimeter. Its municipality, region and address show only if you tapped that lot while online. Otherwise they say "Needs internet".
+- **When the connection returns**, the app switches back to the live cadastre on its own.
+
+Your location works offline, because it comes from the phone's GPS. The satellite map only works offline for places you've already viewed in satellite mode.
+
+Saved lots are kept for 30 days before they're refreshed, and a saved area takes about 0.5–1 MB per square kilometre in a city, much less in the country.
 - Pinch to zoom, and rotate with two fingers. Tap the compass to point north again.
 - The arrow on your location dot shows where the phone is pointing. On iPhone, tap the map once and allow **Motion & Orientation Access** to turn it on. If the arrow looks wrong, move the phone in a figure 8 to recalibrate its compass.
 
@@ -105,8 +118,8 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
 - **Not a legal boundary.** The government data is indicative, and so are the area and perimeter calculated from it. Only a land surveyor's boundary determination establishes the true limit of a lot. Lots can also be visibly offset from the base map.
 - **Renovated cadastre only.** The source layer covers the "cadastre rénové". Areas not yet renovated may show no lots. For official records, use [Infolot](https://www.quebec.ca/habitation-territoire/information-fonciere/cadastre/consulter-cadastre).
 - **Location accuracy is limited by the phone.** The app smooths your location, but a browser can't reach better than the phone's own fix, typically a few metres outdoors and worse under trees or near buildings. Don't use it to place a boundary.
-- **Internet required.** There is no offline mode.
-- **Third-party services.** The app depends on the free services below, and none of them guarantees uptime. If the cadastre service is down, the app says so and the base map keeps working.
+- **Offline is limited to what's saved.** See [Using it offline](#using-it-offline).
+- **Third-party services.** The app depends on the free services below, and none of them guarantees uptime. If the cadastre service is down, the app shows your saved lots instead.
 
 ## Data and technology
 
@@ -119,6 +132,7 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
 | Municipality, MRC and region | [TerrAPI](https://geoegl.msp.gouv.qc.ca/apis/terrapi/), Gouvernement du Québec |
 | Nearest address | [Nominatim](https://nominatim.org/), using OpenStreetMap data |
 | Build | Vite and TypeScript |
+| Offline | Service worker built with [Workbox](https://developer.chrome.com/docs/workbox), and lots saved in the browser's IndexedDB storage |
 | Hosting | GitHub Pages |
 
 The Québec service publishes no explicit licence, only a copyright notice. This app is meant for personal use.

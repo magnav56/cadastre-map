@@ -1,11 +1,30 @@
 import * as maplibregl from 'maplibre-gl';
-import type { ErrorEvent, GeoJSONSource, MapMouseEvent } from 'maplibre-gl';
+import type {
+  ErrorEvent,
+  GeoJSONSource,
+  MapMouseEvent,
+  RasterTileSource,
+  VectorTileSource,
+} from 'maplibre-gl';
+import { registerSW } from 'virtual:pwa-register';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { magvar } from 'magvar';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { watchCompass } from './compass';
 import { LocationFilter } from './location-filter';
 import { findNearestAddress, findPlace, formatArea, formatLength, measure } from './lot-details';
+import type { Place } from './lot-details';
+import {
+  blocksIn,
+  findSavedLot,
+  loadDetails,
+  loadLots,
+  saveBlocks,
+  saveDetails,
+  tilesIn,
+  type Lot,
+  type SavedDetails,
+} from './saved-lots';
 import './style.css';
 
 const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
@@ -17,14 +36,31 @@ const CADASTRE_URL =
 // The service draws nothing past 1:30,000, which is tile zoom 14 at this tile size.
 const CADASTRE_MIN_ZOOM = 14;
 const TILE_SIZE = 512;
+// Retina tiles: 1024px images at double DPI, displayed at 512px.
+const CADASTRE_TILES =
+  `${CADASTRE_URL}/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857` +
+  `&size=${TILE_SIZE * 2},${TILE_SIZE * 2}&dpi=192&format=png32&transparent=true&f=image`;
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+// Lots in view are saved for offline use from this zoom, about one street wide on a phone.
+const AUTO_SAVE_MIN_ZOOM = 15;
+// "Save this area" covers the view from this zoom, which is a few kilometres across on a phone.
+const SAVE_AREA_MIN_ZOOM = 12;
+const SAVE_AREA_MAX_BLOCKS = 250;
+const SAVED_LOTS_FONT = 'Noto Sans Bold';
 
 // MapLibre 6 ships its worker as a separate file, which bundlers must be told about.
 maplibregl.setWorkerUrl(workerUrl);
+registerSW({ immediate: true });
 
 const statusEl = document.querySelector<HTMLElement>('#status')!;
 let locationError: string | null = null;
-let cadastreError: string | null = null;
+// True when the cadastre service can't be reached, so saved lots are shown in its place.
+let cadastreUnreachable = false;
+let notice: string | null = null;
+let noticeTimer: number | undefined;
+
+const usingSavedLots = () => !navigator.onLine || cadastreUnreachable;
 
 const map = new maplibregl.Map({
   container: 'map',
@@ -89,6 +125,10 @@ function applyBasemap() {
   // imagery. Swapping these two inverts it to white on a dark halo.
   map.setPaintProperty('cadastre', 'raster-brightness-min', satellite ? 1 : 0);
   map.setPaintProperty('cadastre', 'raster-brightness-max', satellite ? 0 : 1);
+  // Saved lots are drawn to match.
+  map.setPaintProperty('saved-lots-line', 'line-color', satellite ? '#fff' : '#000');
+  map.setPaintProperty('saved-lots-label', 'text-color', satellite ? '#fff' : '#000');
+  map.setPaintProperty('saved-lots-label', 'text-halo-color', satellite ? '#000' : '#fff');
 }
 
 layersButton.type = 'button';
@@ -104,12 +144,24 @@ layersButton.addEventListener('click', () => {
   applyBasemap();
 });
 
+const saveButton = document.createElement('button');
+saveButton.type = 'button';
+saveButton.className = 'save-button';
+saveButton.title = 'Save this area for offline use';
+saveButton.setAttribute('aria-label', saveButton.title);
+saveButton.innerHTML = `
+  <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+    <path d="M11 3h2v9.2l3.3-3.3 1.4 1.4L12 16l-5.7-5.7 1.4-1.4 3.3 3.3V3Z" />
+    <path d="M4 15h2v4h12v-4h2v6H4v-6Z" />
+  </svg>`;
+saveButton.addEventListener('click', saveArea);
+
 map.addControl(
   {
     onAdd() {
       const container = document.createElement('div');
       container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
-      container.append(layersButton);
+      container.append(saveButton, layersButton);
       return container;
     },
     onRemove() {},
@@ -120,17 +172,167 @@ applyBasemap();
 
 function updateStatus() {
   const zoomHint = map.getZoom() < CADASTRE_MIN_ZOOM - 0.5 ? 'Zoom in to see lots' : null;
-  const message = locationError ?? cadastreError ?? zoomHint;
+  let offlineHint: string | null = null;
+  if (usingSavedLots()) {
+    offlineHint = navigator.onLine
+      ? 'Cadastre service unavailable. Showing saved lots.'
+      : 'Offline. Showing saved lots.';
+  }
+  const message = locationError ?? notice ?? offlineHint ?? zoomHint;
   statusEl.textContent = message;
   statusEl.hidden = !message;
 }
 
-map.on('load', () => {
-  // Retina tiles: 1024px images at double DPI, displayed at 512px.
-  const tiles =
-    `${CADASTRE_URL}/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857` +
-    `&size=${TILE_SIZE * 2},${TILE_SIZE * 2}&dpi=192&format=png32&transparent=true&f=image`;
+// A message that replaces the usual status for a while, or until replaced.
+function showNotice(text: string | null, seconds = 4) {
+  notice = text;
+  window.clearTimeout(noticeTimer);
+  if (text && seconds) {
+    noticeTimer = window.setTimeout(() => showNotice(null), seconds * 1000);
+  }
+  updateStatus();
+}
 
+// Draws saved lots in place of the live cadastre while it can't be reached.
+async function showSavedLots() {
+  const source = map.getSource<GeoJSONSource>('saved-lots');
+  if (!source) return;
+  const blocks = blocksIn(map.getBounds());
+  if (map.getZoom() < CADASTRE_MIN_ZOOM - 0.5 || blocks.length > SAVE_AREA_MAX_BLOCKS) {
+    source.setData(EMPTY);
+    return;
+  }
+  source.setData({ type: 'FeatureCollection', features: await loadLots(blocks) });
+}
+
+function applyCadastreSource() {
+  if (!map.getLayer('cadastre')) return;
+  const saved = usingSavedLots();
+  map.setLayoutProperty('cadastre', 'visibility', saved ? 'none' : 'visible');
+  for (const layer of ['saved-lots-line', 'saved-lots-label']) {
+    map.setLayoutProperty(layer, 'visibility', saved ? 'visible' : 'none');
+  }
+  if (saved) showSavedLots();
+  updateStatus();
+}
+
+// Called when the connection returns, or the service answers again.
+function cadastreReachable() {
+  cadastreUnreachable = false;
+  // Request again any tiles that failed while the service was unreachable.
+  map.getSource<RasterTileSource>('cadastre')?.setTiles([CADASTRE_TILES]);
+  applyCadastreSource();
+}
+
+window.addEventListener('online', cadastreReachable);
+window.addEventListener('offline', applyCadastreSource);
+
+// While the live cadastre is hidden it makes no requests, so check now and then if it's back.
+window.setInterval(async () => {
+  if (!cadastreUnreachable || !navigator.onLine) return;
+  try {
+    const response = await fetch(`${CADASTRE_URL}?f=json`, { signal: AbortSignal.timeout(10_000) });
+    if (response.ok) cadastreReachable();
+  } catch {
+    // Still unreachable.
+  }
+}, 30_000);
+
+// While online, quietly save the lots on screen when zoomed in to street level.
+let autoSaving = false;
+async function autoSave() {
+  if (autoSaving || usingSavedLots() || map.getZoom() < AUTO_SAVE_MIN_ZOOM) return;
+  autoSaving = true;
+  try {
+    await saveBlocks(CADASTRE_URL, blocksIn(map.getBounds()));
+  } catch (error) {
+    console.warn('Could not save lots for offline use', error);
+  } finally {
+    autoSaving = false;
+  }
+}
+
+async function fetchAll(urls: string[]) {
+  for (let i = 0; i < urls.length; i += 6) {
+    await Promise.allSettled(urls.slice(i, i + 6).map((url) => fetch(url)));
+  }
+}
+
+// Fetching base map files puts them in the service worker's cache, so the map draws offline.
+// The style, tile index, icons and fonts are fetched here too: the first visit loads them before
+// the service worker is running, so they wouldn't be cached otherwise.
+async function saveBasemapEssentials() {
+  const style = map.getStyle();
+  const urls = [BASEMAP_STYLE];
+  for (const source of Object.values(style.sources)) {
+    if ('url' in source && source.url) urls.push(source.url);
+  }
+  if (typeof style.sprite === 'string') {
+    for (const suffix of ['.json', '.png', '@2x.json', '@2x.png']) urls.push(style.sprite + suffix);
+  }
+  const fonts = new Set([SAVED_LOTS_FONT]);
+  for (const layer of style.layers) {
+    if (layer.type !== 'symbol') continue;
+    const textFont = layer.layout?.['text-font'];
+    if (Array.isArray(textFont)) fonts.add(textFont.join(','));
+  }
+  if (style.glyphs) {
+    for (const font of fonts) urls.push(style.glyphs.replace('{fontstack}', font).replace('{range}', '0-255'));
+  }
+  await fetchAll(urls);
+}
+
+async function saveBasemap(bounds: maplibregl.LngLatBounds) {
+  await saveBasemapEssentials();
+  const template = map.getSource<VectorTileSource>('openmaptiles')?.tiles?.[0];
+  if (!template) return;
+  const urls: string[] = [];
+  for (let zoom = 0; zoom <= 14; zoom++) {
+    for (const [x, y] of tilesIn(bounds, zoom)) {
+      urls.push(template.replace('{z}', String(zoom)).replace('{x}', String(x)).replace('{y}', String(y)));
+    }
+  }
+  await fetchAll(urls);
+}
+
+let savingArea = false;
+async function saveArea() {
+  if (savingArea) return;
+  if (usingSavedLots()) {
+    showNotice('Connect to the internet to save this area');
+    return;
+  }
+  const bounds = map.getBounds();
+  const blocks = blocksIn(bounds);
+  if (map.getZoom() < SAVE_AREA_MIN_ZOOM || blocks.length > SAVE_AREA_MAX_BLOCKS) {
+    showNotice('Zoom in closer to save this area');
+    return;
+  }
+
+  savingArea = true;
+  saveButton.disabled = true;
+  try {
+    await saveBlocks(CADASTRE_URL, blocks, {
+      maxAgeDays: 1,
+      onProgress: (done, total) =>
+        showNotice(`Saving lots for offline use: ${Math.round((done / total) * 100)}%`, 0),
+    });
+    showNotice('Saving the map for offline use…', 0);
+    await saveBasemap(bounds);
+    // Ask the browser not to clear the saved data when the phone runs low on space.
+    await navigator.storage?.persist?.();
+    const count = (await loadLots(blocks)).length;
+    showNotice(`Saved ${count.toLocaleString('en-CA')} lots in this area for offline use`, 6);
+  } catch (error) {
+    console.error(error);
+    showNotice('Saving failed. Check your connection and try again.', 6);
+  } finally {
+    savingArea = false;
+    saveButton.disabled = false;
+  }
+}
+
+map.on('load', () => {
   map.addSource('satellite', {
     type: 'raster',
     tiles: [SATELLITE_TILES],
@@ -147,12 +349,37 @@ map.on('load', () => {
 
   map.addSource('cadastre', {
     type: 'raster',
-    tiles: [tiles],
+    tiles: [CADASTRE_TILES],
     tileSize: TILE_SIZE,
     minzoom: CADASTRE_MIN_ZOOM,
     attribution: '© Gouvernement du Québec',
   });
   map.addLayer({ id: 'cadastre', type: 'raster', source: 'cadastre' });
+
+  map.addSource('saved-lots', {
+    type: 'geojson',
+    data: EMPTY,
+    attribution: '© Gouvernement du Québec',
+  });
+  map.addLayer({
+    id: 'saved-lots-line',
+    type: 'line',
+    source: 'saved-lots',
+    layout: { visibility: 'none' },
+    paint: { 'line-width': 1 },
+  });
+  map.addLayer({
+    id: 'saved-lots-label',
+    type: 'symbol',
+    source: 'saved-lots',
+    layout: {
+      visibility: 'none',
+      'text-field': ['get', 'NO_LOT'],
+      'text-font': [SAVED_LOTS_FONT],
+      'text-size': 12,
+    },
+    paint: { 'text-halo-width': 1.5 },
+  });
 
   map.addSource('selected-lot', { type: 'geojson', data: EMPTY });
   map.addLayer({
@@ -169,23 +396,26 @@ map.on('load', () => {
   });
 
   applyBasemap();
-  updateStatus();
+  applyCadastreSource();
   geolocate.trigger();
+
+  // Once the service worker is running, make sure the map itself can open offline.
+  if (navigator.onLine) {
+    navigator.serviceWorker?.ready.then(saveBasemapEssentials).catch(console.warn);
+  }
 });
 
 map.on('zoom', updateStatus);
 
-map.on('error', (e: ErrorEvent & { sourceId?: string }) => {
-  if (e.sourceId !== 'cadastre') return;
-  cadastreError = 'Cadastre service unavailable';
-  updateStatus();
+map.on('moveend', () => {
+  if (usingSavedLots()) showSavedLots();
+  else autoSave();
 });
 
-map.on('data', (e) => {
-  if (e.dataType === 'source' && e.sourceId === 'cadastre' && e.tile) {
-    cadastreError = null;
-    updateStatus();
-  }
+map.on('error', (e: ErrorEvent & { sourceId?: string }) => {
+  if (e.sourceId !== 'cadastre' || cadastreUnreachable) return;
+  cadastreUnreachable = true;
+  applyCadastreSource();
 });
 
 geolocate.on('geolocate', ({ coords }) => {
@@ -236,17 +466,17 @@ async function findLot({ lng, lat }: maplibregl.LngLat, signal: AbortSignal) {
     geometryType: 'esriGeometryPoint',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: 'NO_LOT',
+    outFields: 'NO_LOT,OBJECTID',
     outSR: '4326',
     f: 'geojson',
   });
   const response = await fetch(`${CADASTRE_URL}/0/query?${params}`, { signal });
   if (!response.ok) throw new Error(`Lot query failed: ${response.status}`);
   const result: GeoJSON.FeatureCollection = await response.json();
-  return result.features[0] ?? null;
+  return (result.features[0] as Lot | undefined) ?? null;
 }
 
-function selectLot(lot: GeoJSON.Feature | null) {
+function selectLot(lot: Lot | null) {
   map.getSource<GeoJSONSource>('selected-lot')?.setData(lot ?? EMPTY);
 }
 
@@ -259,15 +489,23 @@ function detailRow(list: HTMLElement, label: string, value: string) {
   return detail;
 }
 
-// Fills in slowly as the lookups return, so the lot number and size show straight away.
-function lotDetails(lot: GeoJSON.Feature, { lng, lat }: maplibregl.LngLat, signal: AbortSignal) {
-  const number = String(lot.properties?.NO_LOT ?? '');
+// Fills in as the lookups return, so the lot number and size show straight away. Offline, the
+// municipality and address come from the last time the lot was tapped online, if it was.
+function lotDetails(lot: Lot, { lng, lat }: maplibregl.LngLat, offline: boolean, signal: AbortSignal) {
+  const number = lot.properties.NO_LOT;
   const content = document.createElement('div');
   content.className = 'lot-details';
 
   const title = document.createElement('h2');
   title.textContent = `Lot ${number}`;
   content.append(title);
+
+  if (offline) {
+    const note = document.createElement('p');
+    note.className = 'offline-note';
+    note.textContent = 'Saved copy, shown while offline.';
+    content.append(note);
+  }
 
   if (number.startsWith('PC-')) {
     const note = document.createElement('p');
@@ -284,24 +522,51 @@ function lotDetails(lot: GeoJSON.Feature, { lng, lat }: maplibregl.LngLat, signa
 
   const place = detailRow(list, 'Municipality', 'Loading…');
   const region = detailRow(list, 'Region', 'Loading…');
-  findPlace(lng, lat, signal)
-    .then((found) => {
-      place.textContent = found.municipality ?? 'Unknown';
-      if (found.mrc && found.mrc !== found.municipality) place.textContent += `, MRC ${found.mrc}`;
-      region.textContent = found.region ?? 'Unknown';
-    })
-    .catch(() => {
-      if (signal.aborted) return;
-      place.textContent = 'Unavailable';
-      region.textContent = 'Unavailable';
-    });
-
   const address = detailRow(list, 'Nearest address', 'Loading…');
-  findNearestAddress(lng, lat, signal)
-    .then((found) => (address.textContent = found ?? 'None nearby'))
-    .catch(() => {
-      if (!signal.aborted) address.textContent = 'Unavailable';
-    });
+  const missing = offline ? 'Needs internet' : 'Unavailable';
+
+  const showPlace = (found: Place) => {
+    place.textContent = found.municipality ?? 'Unknown';
+    if (found.mrc && found.mrc !== found.municipality) place.textContent += `, MRC ${found.mrc}`;
+    region.textContent = found.region ?? 'Unknown';
+  };
+  const showAddress = (found: string | null) => (address.textContent = found ?? 'None nearby');
+
+  const showSaved = async (which: keyof SavedDetails) => {
+    const saved = await loadDetails(lot).catch(() => undefined);
+    if (signal.aborted) return;
+    if (which === 'place') {
+      if (saved?.place) showPlace(saved.place);
+      else place.textContent = region.textContent = missing;
+    } else if (saved && 'address' in saved) {
+      showAddress(saved.address ?? null);
+    } else {
+      address.textContent = missing;
+    }
+  };
+
+  if (offline) {
+    showSaved('place');
+    showSaved('address');
+    return content;
+  }
+
+  const placeLookup = findPlace(lng, lat, signal);
+  const addressLookup = findNearestAddress(lng, lat, signal);
+  placeLookup.then(showPlace, () => {
+    if (!signal.aborted) showSaved('place');
+  });
+  addressLookup.then(showAddress, () => {
+    if (!signal.aborted) showSaved('address');
+  });
+
+  // Keep what was found, for when this lot is tapped offline.
+  Promise.allSettled([placeLookup, addressLookup]).then(([foundPlace, foundAddress]) => {
+    const details: SavedDetails = {};
+    if (foundPlace.status === 'fulfilled') details.place = foundPlace.value;
+    if (foundAddress.status === 'fulfilled') details.address = foundAddress.value;
+    if (Object.keys(details).length) saveDetails(lot, details).catch(console.warn);
+  });
 
   return content;
 }
@@ -312,19 +577,27 @@ map.on('click', async (e: MapMouseEvent) => {
   lotQuery?.abort();
   const query = (lotQuery = new AbortController());
 
-  try {
-    const lot = await findLot(e.lngLat, query.signal);
-    if (lot) {
-      selectLot(lot);
-      showSheet(lotDetails(lot, e.lngLat, query.signal), e.point);
-    } else {
-      closeSheet();
+  let offline = usingSavedLots();
+  let lot: Lot | null = null;
+  if (!offline) {
+    try {
+      lot = await findLot(e.lngLat, query.signal);
+    } catch (error) {
+      if (query.signal.aborted) return;
+      console.error(error);
+      cadastreUnreachable = true;
+      applyCadastreSource();
+      offline = true;
     }
-    cadastreError = null;
-  } catch (error) {
-    if (query.signal.aborted) return;
-    console.error(error);
-    cadastreError = 'Cadastre service unavailable';
   }
-  updateStatus();
+  if (offline) lot = await findSavedLot(e.lngLat);
+  if (query.signal.aborted) return;
+
+  if (lot) {
+    selectLot(lot);
+    showSheet(lotDetails(lot, e.lngLat, offline, query.signal), e.point);
+  } else {
+    closeSheet();
+    if (offline) showNotice("This lot isn't saved on your phone");
+  }
 });

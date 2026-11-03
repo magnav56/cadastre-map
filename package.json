@@ -5,17 +5,25 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json && vite build",
     "preview": "vite preview --host",
     "android": "npm run build && adb reverse tcp:4173 tcp:4173 && vite preview --host 127.0.0.1 --port 4173 --strictPort"
   },
   "dependencies": {
+    "idb-keyval": "^6.3.0",
     "magvar": "^2.2.0",
     "maplibre-gl": "^6.16.0"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.5",
+    "vite-plugin-pwa": "^2.0.0",
+    "workbox-core": "^7.4.1",
+    "workbox-expiration": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1",
+    "workbox-window": "^7.4.1"
   }
 }
