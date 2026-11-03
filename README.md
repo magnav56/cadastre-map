@@ -1,6 +1,6 @@
 # Cadastre Map
 
-A Google Maps-style web app that shows Québec's cadastral lots and your location. Tap a lot to highlight it and see its number. It's a web app that installs on iPhone and Android from the browser, with no app store, Mac, Apple developer account, API key or backend.
+A Google Maps-style web app that shows Québec's cadastral lots and your location. Tap a lot to see its number, size and location. It's a web app that installs on iPhone and Android from the browser, with no app store, Mac, Apple developer account, API key or backend.
 
 ## Requirements
 
@@ -90,13 +90,19 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
 
 - The map centres on you when it opens. The button at the bottom right recentres it and follows you as you move.
 - The layers button above it switches between the plan and satellite maps. The app remembers your choice.
-- Tap a lot to highlight it and show its number. Lots starting with `PC-` are complementary plans.
+- Tap a lot to highlight it and open a card at the bottom of the screen with:
+  - its number. Lots starting with `PC-` are complementary plans, used for condos and other properties divided by floor.
+  - its area and perimeter, calculated from the outline.
+  - its municipality, MRC and region.
+  - the nearest street address known to OpenStreetMap. This may belong to a neighbouring lot.
+
+  Tap **×** to close the card.
 - Pinch to zoom, and rotate with two fingers. Tap the compass to point north again.
 - The arrow on your location dot shows where the phone is pointing. On iPhone, tap the map once and allow **Motion & Orientation Access** to turn it on. If the arrow looks wrong, move the phone in a figure 8 to recalibrate its compass.
 
 ## Limitations
 
-- **Not a legal boundary.** The government data is indicative. Only a land surveyor's boundary determination establishes the true limit of a lot. Lots can also be visibly offset from the base map.
+- **Not a legal boundary.** The government data is indicative, and so are the area and perimeter calculated from it. Only a land surveyor's boundary determination establishes the true limit of a lot. Lots can also be visibly offset from the base map.
 - **Renovated cadastre only.** The source layer covers the "cadastre rénové". Areas not yet renovated may show no lots. For official records, use [Infolot](https://www.quebec.ca/habitation-territoire/information-fonciere/cadastre/consulter-cadastre).
 - **Location accuracy is limited by the phone.** The app smooths your location, but a browser can't reach better than the phone's own fix, typically a few metres outdoors and worse under trees or near buildings. Don't use it to place a boundary.
 - **Internet required.** There is no offline mode.
@@ -110,6 +116,8 @@ If location doesn't work, check **Settings > Privacy & Security > Location Servi
 | Base map | [OpenFreeMap](https://openfreemap.org/) "Liberty" style, using OpenStreetMap data |
 | Satellite | [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) |
 | Cadastre | [`Cadastre_allege`](https://geo.environnement.gouv.qc.ca/donnees/rest/services/Reference/Cadastre_allege/MapServer) service, © Gouvernement du Québec |
+| Municipality, MRC and region | [TerrAPI](https://geoegl.msp.gouv.qc.ca/apis/terrapi/), Gouvernement du Québec |
+| Nearest address | [Nominatim](https://nominatim.org/), using OpenStreetMap data |
 | Build | Vite and TypeScript |
 | Hosting | GitHub Pages |
 

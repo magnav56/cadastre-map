@@ -5,6 +5,7 @@ import { magvar } from 'magvar';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { watchCompass } from './compass';
 import { LocationFilter } from './location-filter';
+import { findNearestAddress, findPlace, formatArea, formatLength, measure } from './lot-details';
 import './style.css';
 
 const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
@@ -204,7 +205,30 @@ geolocate.on('error', (e) => {
 });
 
 let lotQuery: AbortController | null = null;
-const popup = new maplibregl.Popup({ closeOnClick: false, focusAfterOpen: false });
+const sheet = document.querySelector<HTMLElement>('#lot-sheet')!;
+const sheetContent = document.querySelector<HTMLElement>('#lot-sheet-content')!;
+
+// Lift the map's bottom buttons and credits above the sheet while it's open.
+new ResizeObserver(() => {
+  const height = sheet.hidden ? 0 : sheet.offsetHeight;
+  document.documentElement.style.setProperty('--sheet-height', `${height}px`);
+}).observe(sheet);
+
+function showSheet(content: HTMLElement, tapped: maplibregl.Point) {
+  sheetContent.replaceChildren(content);
+  sheet.hidden = false;
+  // Pan the tapped lot into view if the sheet now covers it.
+  const visibleBottom = map.getContainer().clientHeight - sheet.offsetHeight;
+  if (tapped.y > visibleBottom - 40) map.panBy([0, tapped.y - visibleBottom / 2]);
+}
+
+function closeSheet() {
+  lotQuery?.abort();
+  sheet.hidden = true;
+  selectLot(null);
+}
+
+document.querySelector('#lot-sheet-close')!.addEventListener('click', closeSheet);
 
 async function findLot({ lng, lat }: maplibregl.LngLat, signal: AbortSignal) {
   const params = new URLSearchParams({
@@ -226,6 +250,62 @@ function selectLot(lot: GeoJSON.Feature | null) {
   map.getSource<GeoJSONSource>('selected-lot')?.setData(lot ?? EMPTY);
 }
 
+function detailRow(list: HTMLElement, label: string, value: string) {
+  const term = document.createElement('dt');
+  const detail = document.createElement('dd');
+  term.textContent = label;
+  detail.textContent = value;
+  list.append(term, detail);
+  return detail;
+}
+
+// Fills in slowly as the lookups return, so the lot number and size show straight away.
+function lotDetails(lot: GeoJSON.Feature, { lng, lat }: maplibregl.LngLat, signal: AbortSignal) {
+  const number = String(lot.properties?.NO_LOT ?? '');
+  const content = document.createElement('div');
+  content.className = 'lot-details';
+
+  const title = document.createElement('h2');
+  title.textContent = `Lot ${number}`;
+  content.append(title);
+
+  if (number.startsWith('PC-')) {
+    const note = document.createElement('p');
+    note.textContent =
+      'Complementary plan, used for condos and other properties divided by floor. The size is the whole building lot.';
+    content.append(note);
+  }
+
+  const list = document.createElement('dl');
+  content.append(list);
+  const { area, perimeter } = measure(lot.geometry);
+  detailRow(list, 'Area', formatArea(area));
+  detailRow(list, 'Perimeter', formatLength(perimeter));
+
+  const place = detailRow(list, 'Municipality', 'Loading…');
+  const region = detailRow(list, 'Region', 'Loading…');
+  findPlace(lng, lat, signal)
+    .then((found) => {
+      place.textContent = found.municipality ?? 'Unknown';
+      if (found.mrc && found.mrc !== found.municipality) place.textContent += `, MRC ${found.mrc}`;
+      region.textContent = found.region ?? 'Unknown';
+    })
+    .catch(() => {
+      if (signal.aborted) return;
+      place.textContent = 'Unavailable';
+      region.textContent = 'Unavailable';
+    });
+
+  const address = detailRow(list, 'Nearest address', 'Loading…');
+  findNearestAddress(lng, lat, signal)
+    .then((found) => (address.textContent = found ?? 'None nearby'))
+    .catch(() => {
+      if (!signal.aborted) address.textContent = 'Unavailable';
+    });
+
+  return content;
+}
+
 map.on('click', async (e: MapMouseEvent) => {
   if (map.getZoom() < CADASTRE_MIN_ZOOM - 0.5) return;
 
@@ -234,9 +314,12 @@ map.on('click', async (e: MapMouseEvent) => {
 
   try {
     const lot = await findLot(e.lngLat, query.signal);
-    popup.remove();
-    selectLot(lot);
-    if (lot) popup.setLngLat(e.lngLat).setText(`Lot ${lot.properties?.NO_LOT}`).addTo(map);
+    if (lot) {
+      selectLot(lot);
+      showSheet(lotDetails(lot, e.lngLat, query.signal), e.point);
+    } else {
+      closeSheet();
+    }
     cadastreError = null;
   } catch (error) {
     if (query.signal.aborted) return;
@@ -245,5 +328,3 @@ map.on('click', async (e: MapMouseEvent) => {
   }
   updateStatus();
 });
-
-popup.on('close', () => selectLot(null));

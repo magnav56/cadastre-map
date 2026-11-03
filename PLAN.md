@@ -24,6 +24,7 @@ See Québec's cadastral lots and your own location on a Google Maps-style map, o
 - [x] Base map, cadastre overlay and live location
 - [x] Tap a lot to highlight it and show its number
 - [x] Layers button to switch between plan and satellite maps
+- [x] Lot card with area, perimeter, municipality, MRC, region and nearest address
 - [x] Messages for zooming in, location denied and service unavailable
 - [x] Home Screen metadata and icons
 - [x] GitHub Pages workflow
@@ -47,9 +48,11 @@ Fix whatever this turns up before adding anything else.
 In order of likely value:
 
 1. **Search.** Find an address or lot number. Lot search can use the same service.
-2. **Lot opacity slider.** Useful where lot numbers cover the map in dense areas.
-3. **Coverage message.** Say when an area has no renovated cadastre, instead of showing an empty map.
-4. **Offline use.** Save recently viewed tiles with a service worker. This is the largest item, because iOS limits browser storage.
+2. **Property assessment details.** Assessed value, year built, use, floors and dwelling count from the open Rôle d'évaluation foncière (CC-BY 4.0). Owner names are withheld. There is no live service: the yearly files are about 1 GB, and the details must be joined to the locations by property ID. This needs a preprocessing script and file hosting beyond GitHub's limits, such as Cloudflare R2.
+3. **Hazard and zoning overlays.** Flood zones are available as a live government service that browsers can use. The CPTAQ agricultural zone has a WMS service that hasn't been tested yet.
+4. **Lot opacity slider.** Useful where lot numbers cover the map in dense areas.
+5. **Coverage message.** Say when an area has no renovated cadastre, instead of showing an empty map.
+6. **Offline use.** Save recently viewed tiles with a service worker. This is the largest item, because iOS limits browser storage.
 
 ## Risks
 
@@ -58,5 +61,6 @@ In order of likely value:
 | The Environment ministry changes or restricts the service | Lots disappear | The URL is one constant in `src/main.ts`. The fallback is a small proxy on a free tier, or another government endpoint. |
 | The service has no published licence | Access could be limited later | Personal, low-volume use only. Don't promote the app publicly. |
 | OpenFreeMap is unavailable | No base map | Swap the style URL for another MapLibre-compatible style. |
+| TerrAPI or Nominatim becomes unavailable | The card shows "Unavailable" for that row; everything else keeps working | Nominatim allows about one request per second, which tapping lots by hand stays under. |
 | Esri restricts its free imagery | No satellite map; the plan map keeps working | The tile URL is one constant in `src/main.ts`. Keep use personal and low-volume. |
 | iOS clears data for Home Screen apps | The location prompt may reappear | Harmless: the app stores nothing that matters. |
